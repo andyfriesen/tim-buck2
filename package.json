@@ -17,6 +17,14 @@
   "contributes": {
     "commands": [
       {
+        "command": "tim-buck2.selectPlatform",
+        "title": "Select Platform"
+      },
+      {
+        "command": "tim-buck2.selectTarget",
+        "title": "Select Target"
+      },
+      {
         "command": "tim-buck2.build",
         "title": "Build"
       }
