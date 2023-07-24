@@ -92,7 +92,26 @@ function build() {
         updateBuildButton();
     });
 
+    buildCompilationDatabase();
     updateBuildButton();
+}
+
+async function buildCompilationDatabase() {
+    return;
+    const subTarget = currentTarget + '[compilation-database]';
+
+    const cmd = ['build'];
+    if (currentPlatform.length > 0) {
+        cmd.push('--target-platforms');
+        cmd.push(currentPlatform);
+    }
+
+    cmd.push('--out');
+    cmd.push('.');
+
+    cmd.push(currentTarget + '[compilation-database]');
+
+    const stdout = await runBuck(cmd);
 }
 
 function stopBuild() {
@@ -112,10 +131,11 @@ function clean() {
 async function onClickedPlatform() {
     const platforms = await getPlatforms();
 
-    vscode.window.showQuickPick(platforms).then((newPlatform) => {
+    vscode.window.showQuickPick(platforms).then(async (newPlatform) => {
         if (newPlatform) {
             currentPlatform = newPlatform;
         }
+        await buildCompilationDatabase();
         updateStatusBars();
     });
 }
@@ -123,10 +143,11 @@ async function onClickedPlatform() {
 async function onClickedTarget() {
     const targets = await getTargets();
 
-    vscode.window.showQuickPick(targets).then((newTarget) => {
+    vscode.window.showQuickPick(targets).then(async (newTarget) => {
         if (newTarget) {
             currentTarget = newTarget;
         }
+        await buildCompilationDatabase();
         updateStatusBars();
     });
 }
@@ -184,11 +205,7 @@ function runBuck(args: string[]): Promise<string> {
         const buck2Path = conf.get('buck2Path') as string;
         assert(typeof buck2Path === 'string');
 
-        const options = {
-            cwd: getWorkspaceRoot()
-        };
-
-        execFile(buck2Path, args, options, (err, stdout, stderr) => {
+        execFile(buck2Path, args, { cwd: getWorkspaceRoot() }, (err, stdout, stderr) => {
             if (err) {
                 console.error('Buck2 command failed:', args);
                 console.error(err);
