@@ -31,6 +31,10 @@
       {
         "command": "tim-buck2.clean",
         "title": "buck2: Clean"
+      },
+      {
+        "command": "tim-buck2.compileThisFile",
+        "title": "buck2: Compile Current File"
       }
     ],
     "configuration": {
