@@ -1,8 +1,6 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
+
 import { ChildProcess, execFile } from "node:child_process";
 import { assert } from "node:console";
-import * as os from 'os';
 import * as vscode from 'vscode';
 
 let platformStatusBarItem: vscode.StatusBarItem;
@@ -38,7 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(cleanCommandId, clean));
     context.subscriptions.push(vscode.commands.registerCommand(stopBuildCommandId, stopBuild));
 
-    // TODO scoop up from .buckconfig
+    // TODO scoop up the default platform from .buckconfig
     currentPlatform = "root//platforms:release-nosan";
     currentTarget = ":Luau.UnitTest";
 
@@ -55,8 +53,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(clickedTargetCommandId, onClickedTarget));
 
     stopBuildButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
-    // stopBuildButton.text = '$(loading~spin) Build';
-    stopBuildButton.text = '$(settings-gear) Build';
     stopBuildButton.command = stopBuildCommandId;
 
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateStatusBars));
@@ -66,66 +62,10 @@ export function activate(context: vscode.ExtensionContext) {
     updateBuildButton();
 }
 
-function build() {
-    if (buildIsRunning) {
-        vscode.window.showInformationMessage('A build is already running');
-        return;
-    }
-
-    const conf = vscode.workspace.getConfiguration('tim-buck2');
-
-    const buck2Path = conf.get('buck2Path') as string;
-    assert(typeof buck2Path === 'string');
-
-    const cmd = ['build'];
-    if (currentPlatform.length > 0) {
-        cmd.push('--target-platforms');
-        cmd.push(currentPlatform);
-    }
-
-    cmd.push(currentTarget);
-
-    buildIsRunning = true;
-    buildProcess = execFile(buck2Path, cmd, { cwd: getWorkspaceRoot() }, (err, stdout, stderr) => {
-        buildIsRunning = false;
-        buildProcess = undefined;
-        updateBuildButton();
-    });
-
-    buildCompilationDatabase();
-    updateBuildButton();
-}
-
-async function buildCompilationDatabase() {
-    return;
-    const subTarget = currentTarget + '[compilation-database]';
-
-    const cmd = ['build'];
-    if (currentPlatform.length > 0) {
-        cmd.push('--target-platforms');
-        cmd.push(currentPlatform);
-    }
-
-    cmd.push('--out');
-    cmd.push('.');
-
-    cmd.push(currentTarget + '[compilation-database]');
-
-    const stdout = await runBuck(cmd);
-}
-
-function stopBuild() {
-    if (!buildProcess) {
-        build();
-    } else {
-        buildProcess.kill();
-    }
-
-    updateBuildButton();
-}
-
-function clean() {
-    runBuck(['clean']);
+// This method is called when your extension is deactivated
+export function deactivate() {
+    platformStatusBarItem.hide();
+    targetStatusBarItem.hide();
 }
 
 async function onClickedPlatform() {
@@ -168,6 +108,38 @@ function updateStatusBars() {
 
     targetStatusBarItem.text = currentTarget ? `Target: ${currentTarget}` : "Target...";
     targetStatusBarItem.show();
+}
+
+async function buildCompilationDatabase() {
+    return;
+    const subTarget = currentTarget + '[compilation-database]';
+
+    const cmd = ['build'];
+    if (currentPlatform.length > 0) {
+        cmd.push('--target-platforms');
+        cmd.push(currentPlatform);
+    }
+
+    cmd.push('--out');
+    cmd.push('.');
+
+    cmd.push(currentTarget + '[compilation-database]');
+
+    const stdout = await runBuck(cmd);
+}
+
+function stopBuild() {
+    if (!buildProcess) {
+        build();
+    } else {
+        buildProcess.kill();
+    }
+
+    updateBuildButton();
+}
+
+function clean() {
+    runBuck(['clean']);
 }
 
 function splitLines(s: string): string[] {
@@ -219,8 +191,33 @@ function runBuck(args: string[]): Promise<string> {
     });
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {
-    platformStatusBarItem.hide();
-    targetStatusBarItem.hide();
+
+function build() {
+    if (buildIsRunning) {
+        vscode.window.showInformationMessage('A build is already running');
+        return;
+    }
+
+    const conf = vscode.workspace.getConfiguration('tim-buck2');
+
+    const buck2Path = conf.get('buck2Path') as string;
+    assert(typeof buck2Path === 'string');
+
+    const cmd = ['build'];
+    if (currentPlatform.length > 0) {
+        cmd.push('--target-platforms');
+        cmd.push(currentPlatform);
+    }
+
+    cmd.push(currentTarget);
+
+    buildIsRunning = true;
+    buildProcess = execFile(buck2Path, cmd, { cwd: getWorkspaceRoot() }, (err, stdout, stderr) => {
+        buildIsRunning = false;
+        buildProcess = undefined;
+        updateBuildButton();
+    });
+
+    buildCompilationDatabase();
+    updateBuildButton();
 }
