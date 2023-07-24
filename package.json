@@ -18,15 +18,19 @@
     "commands": [
       {
         "command": "tim-buck2.selectPlatform",
-        "title": "Select Platform"
+        "title": "buck2: Select Platform"
       },
       {
         "command": "tim-buck2.selectTarget",
-        "title": "Select Target"
+        "title": "buck2: Select Target"
       },
       {
         "command": "tim-buck2.build",
-        "title": "Build"
+        "title": "buck2: Build"
+      },
+      {
+        "command": "tim-buck2.clean",
+        "title": "buck2: Clean"
       }
     ],
     "configuration": {
