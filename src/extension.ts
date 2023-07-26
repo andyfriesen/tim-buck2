@@ -7,11 +7,11 @@ import * as vscode from 'vscode';
 
 let platformStatusBarItem: vscode.StatusBarItem;
 const clickedSelectPlatformCommandId = 'tim-buck2.selectPlatform';
-let currentPlatform = '';
+let currentPlatform : string | null = null;
 
 let targetStatusBarItem: vscode.StatusBarItem;
 const clickedTargetCommandId = 'tim-buck2.selectTarget';
-let currentTarget = '';
+let currentTarget : string | null = null;
 
 let stopBuildButton: vscode.StatusBarItem;
 const stopBuildCommandId = 'tim-buck2.stopBuild';
@@ -51,10 +51,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(stopBuildCommandId, stopBuild));
     context.subscriptions.push(vscode.commands.registerCommand(compileThisFileCommandId, compileThisFile));
 
-    // TODO scoop up the default platform from .buckconfig
-    currentPlatform = "root//platforms:release-nosan";
-    currentTarget = ":Luau.UnitTest";
-
     platformStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 2);
     platformStatusBarItem.command = clickedSelectPlatformCommandId;
     platformStatusBarItem.tooltip = 'Select Build Platform';
@@ -88,8 +84,12 @@ export function deactivate() {
 async function onClickedPlatform() {
     const platforms = await getPlatforms();
 
+    platforms.unshift('default');
+
     vscode.window.showQuickPick(platforms).then(async (newPlatform) => {
-        if (newPlatform) {
+        if (newPlatform === 'default') {
+            currentPlatform = null;
+        } else if (newPlatform) {
             currentPlatform = newPlatform;
         }
         await buildCompilationDatabase();
@@ -100,8 +100,12 @@ async function onClickedPlatform() {
 async function onClickedTarget() {
     const targets = await getTargets();
 
+    targets.unshift('all');
+
     vscode.window.showQuickPick(targets).then(async (newTarget) => {
-        if (newTarget) {
+        if (newTarget === 'all') {
+            currentTarget = null;
+        } else if (newTarget) {
             currentTarget = newTarget;
         }
         await buildCompilationDatabase();
@@ -120,10 +124,10 @@ function updateBuildButton() {
 }
 
 function updateStatusBars() {
-    platformStatusBarItem.text = currentPlatform ? `Platform: ${currentPlatform}` : "Platform...";
+    platformStatusBarItem.text = `Platform: ${currentPlatform ?? 'default'}`;
     platformStatusBarItem.show();
 
-    targetStatusBarItem.text = currentTarget ? `Target: ${currentTarget}` : "Target...";
+    targetStatusBarItem.text = `Target: ${currentTarget ?? 'all'}`;
     targetStatusBarItem.show();
 }
 
@@ -136,7 +140,12 @@ async function buildCompilationDatabase() {
 
     const compileDatabaseTargets = allTargets.map(s => s + '[compilation-database]');
 
-    const cmd = ['build', '--target-platforms', currentPlatform, '--show-full-output'];
+    const cmd = ['build', '--show-full-output'];
+
+    if (currentPlatform) {
+        cmd.push('--target-platforms');
+        cmd.push(currentPlatform);
+    }
 
     const buildOutput = await runBuck(cmd.concat(compileDatabaseTargets));
 
@@ -282,15 +291,21 @@ function build() {
     assert(typeof buck2Path === 'string');
 
     const cmd = ['build'];
-    if (currentPlatform.length > 0) {
+    if (currentPlatform) {
         cmd.push('--target-platforms');
         cmd.push(currentPlatform);
     }
 
-    cmd.push(currentTarget);
+    cmd.push(currentTarget ?? '...');
 
     buildIsRunning = true;
     buildProcess = execFile(buck2Path, cmd, { cwd: getWorkspaceRoot() }, (err, stdout, stderr) => {
+        vscode.window.showInformationMessage('Compile complete');
+        if (err) {
+            console.error('Error:', err);
+        } else {
+            console.log('Success!', stdout);
+        }
         buildIsRunning = false;
         buildProcess = undefined;
         updateBuildButton();
