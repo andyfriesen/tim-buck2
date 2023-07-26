@@ -1,5 +1,5 @@
 
-import { ChildProcess, execFile } from "node:child_process";
+import { ChildProcess, SpawnOptions, execFile, spawn } from "node:child_process";
 import { assert } from "node:console";
 import * as fs from "node:fs/promises";
 import path = require("node:path");
@@ -21,6 +21,9 @@ let buildProcess: ChildProcess | undefined;
 const buildCommandId = 'tim-buck2.build';
 const cleanCommandId = 'tim-buck2.clean';
 const compileThisFileCommandId = 'tim-buck2.compileThisFile';
+
+let writeEmitter: vscode.EventEmitter<string>;
+let buildTerminal : vscode.Terminal | undefined;
 
 type CompilationDatabase = {
     [index: string]: CompilationDatabaseEntry
@@ -279,7 +282,7 @@ function runBuck(args: string[]): Promise<string> {
 }
 
 
-function build() {
+async function build() {
     if (buildIsRunning) {
         vscode.window.showInformationMessage('A build is already running');
         return;
@@ -290,7 +293,7 @@ function build() {
     const buck2Path = conf.get('buck2Path') as string;
     assert(typeof buck2Path === 'string');
 
-    const cmd = ['build'];
+    const cmd = ['build', '-v2'];
     if (currentPlatform) {
         cmd.push('--target-platforms');
         cmd.push(currentPlatform);
@@ -299,18 +302,66 @@ function build() {
     cmd.push(currentTarget ?? '...');
 
     buildIsRunning = true;
-    buildProcess = execFile(buck2Path, cmd, { cwd: getWorkspaceRoot() }, (err, stdout, stderr) => {
-        vscode.window.showInformationMessage('Compile complete');
-        if (err) {
-            console.error('Error:', err);
-        } else {
-            console.log('Success!', stdout);
-        }
-        buildIsRunning = false;
-        buildProcess = undefined;
-        updateBuildButton();
-    });
-
     buildCompilationDatabase();
     updateBuildButton();
+
+    const code = await run(buck2Path, cmd);
+    vscode.window.showInformationMessage('Compile complete');
+
+    buildIsRunning = false;
+    buildProcess = undefined;
+    updateBuildButton();
+
+}
+
+
+function run(command: string, args: string[]): Promise<number> {
+    return new Promise((accept, reject) => {
+        if (!buildTerminal) {
+            writeEmitter = new vscode.EventEmitter<string>();
+            buildTerminal = vscode.window.createTerminal({
+                name: 'tim-buck2',
+                pty: {
+                    onDidWrite: writeEmitter.event,
+                    open() {
+
+                    },
+                    close() {
+
+                    },
+                    handleInput(data: string) {
+                    }
+                }
+            });
+            buildTerminal.show();
+        }
+
+        const options: SpawnOptions = {
+            cwd: getWorkspaceRoot(),
+        };
+
+        buildProcess = spawn(command, args, options);
+
+        const stdout = buildProcess.stdout!;
+        assert(stdout);
+
+        const stderr = buildProcess.stderr!;
+        assert(stderr);
+
+        stdout.setEncoding('utf8');
+        stdout.addListener('data', (data) => {
+            console.log('stdout', data);
+            writeEmitter.fire(data.replaceAll('\n', '\r\n'));
+        });
+
+        stderr.setEncoding('utf8');
+        stderr.addListener('data', (data: string) => {
+            console.warn('stderr', data);
+            writeEmitter.fire(data.replaceAll('\n', '\r\n'));
+        });
+
+        buildProcess.addListener('close', (code) => {
+            accept(code!);
+        });
+    });
 }
