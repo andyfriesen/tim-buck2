@@ -35,6 +35,10 @@
       {
         "command": "tim-buck2.compileThisFile",
         "title": "buck2: Compile Current File"
+      },
+      {
+        "command": "tim-buck2.launchTargetPath",
+        "title": "buck2: Get Launch Target Path"
       }
     ],
     "configuration": {

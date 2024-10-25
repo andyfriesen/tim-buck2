@@ -1,4 +1,3 @@
-
 import { ChildProcess, SpawnOptions, execFile, spawn } from "node:child_process";
 import { assert } from "node:console";
 import * as fs from "node:fs/promises";
@@ -21,6 +20,7 @@ let buildProcess: ChildProcess | undefined;
 const buildCommandId = 'tim-buck2.build';
 const cleanCommandId = 'tim-buck2.clean';
 const compileThisFileCommandId = 'tim-buck2.compileThisFile';
+const launchTargetPathId = 'tim-buck2.launchTargetPath';
 
 let writeEmitter: vscode.EventEmitter<string>;
 let buildTerminal : vscode.Terminal | undefined;
@@ -54,15 +54,31 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(stopBuildCommandId, stopBuild));
     context.subscriptions.push(vscode.commands.registerCommand(compileThisFileCommandId, compileThisFile));
 
+    context.subscriptions.push(vscode.commands.registerCommand(
+        launchTargetPathId,
+        async () => {
+            if (currentTarget === null) {
+                return null;
+            }
+            // TODO: I'm not sure if this is the best way to ensure that
+            // when we're getting the path to the build target for
+            // debugging or launching, we build the latest version of
+            // the underlying binary.
+            await build();
+            var out = JSON.parse(await runBuck(["build", currentTarget, "--show-json-output"]));
+            return path.join(getWorkspaceRoot()!, out[currentTarget]);
+        },
+    ));
+
     platformStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 2);
     platformStatusBarItem.command = clickedSelectPlatformCommandId;
-    platformStatusBarItem.tooltip = 'Select Build Platform';
+    platformStatusBarItem.tooltip = 'Select Buck2 Build Platform';
     context.subscriptions.push(platformStatusBarItem);
     context.subscriptions.push(vscode.commands.registerCommand(clickedSelectPlatformCommandId, onClickedPlatform));
 
     targetStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 2);
     targetStatusBarItem.command = clickedTargetCommandId;
-    targetStatusBarItem.tooltip = 'Select Build Target';
+    targetStatusBarItem.tooltip = 'Select Buck2 Build Target';
     context.subscriptions.push(targetStatusBarItem);
     context.subscriptions.push(vscode.commands.registerCommand(clickedTargetCommandId, onClickedTarget));
 
@@ -118,9 +134,9 @@ async function onClickedTarget() {
 
 function updateBuildButton() {
     if (buildProcess) {
-        stopBuildButton.text = '$(loading~spin) Cancel Build';
+        stopBuildButton.text = '$(loading~spin) Cancel Buck2 Build';
     } else {
-        stopBuildButton.text = "$(settings-gear) Build";
+        stopBuildButton.text = "$(settings-gear) Buck2 Build";
     }
 
     stopBuildButton.show();
@@ -237,8 +253,9 @@ function splitLines(s: string): string[] {
 }
 
 async function getTargets(): Promise<string[]> {
-    let stdout = await runBuck(["targets", ":"]);
-    return splitLines(stdout);
+    // `buck2 targets //...` is roughly "please get me all the targets in
+    // the current repo."
+    return splitLines(await runBuck(["targets", "//..."]));
 }
 
 async function getPlatforms(): Promise<string[]> {
