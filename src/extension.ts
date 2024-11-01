@@ -60,6 +60,11 @@ export function activate(context: vscode.ExtensionContext) {
             if (currentTarget === null) {
                 return null;
             }
+            // TODO: I'm not sure if this is the best way to ensure that
+            // when we're getting the path to the build target for
+            // debugging or launching, we build the latest version of
+            // the underlying binary.
+            await build();
             var out = JSON.parse(await runBuck(["build", currentTarget, "--show-json-output"]));
             return path.join(getWorkspaceRoot()!, out[currentTarget]);
         },
