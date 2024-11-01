@@ -10,6 +10,7 @@ let currentPlatform : string | null = null;
 
 let targetStatusBarItem: vscode.StatusBarItem;
 const clickedTargetCommandId = 'tim-buck2.selectTarget';
+const currentTargetKey = 'tim-buck2.currentTarget';
 let currentTarget : string | null = null;
 
 let stopBuildButton: vscode.StatusBarItem;
@@ -22,8 +23,7 @@ const cleanCommandId = 'tim-buck2.clean';
 const compileThisFileCommandId = 'tim-buck2.compileThisFile';
 const launchTargetPathId = 'tim-buck2.launchTargetPath';
 
-let writeEmitter: vscode.EventEmitter<string>;
-let buildTerminal : vscode.Terminal | undefined;
+let buildOutput : vscode.OutputChannel;
 
 type CompilationDatabase = {
     [index: string]: CompilationDatabaseEntry
@@ -60,11 +60,6 @@ export function activate(context: vscode.ExtensionContext) {
             if (currentTarget === null) {
                 return null;
             }
-            // TODO: I'm not sure if this is the best way to ensure that
-            // when we're getting the path to the build target for
-            // debugging or launching, we build the latest version of
-            // the underlying binary.
-            await build();
             var out = JSON.parse(await runBuck(["build", currentTarget, "--show-json-output"]));
             return path.join(getWorkspaceRoot()!, out[currentTarget]);
         },
@@ -80,13 +75,16 @@ export function activate(context: vscode.ExtensionContext) {
     targetStatusBarItem.command = clickedTargetCommandId;
     targetStatusBarItem.tooltip = 'Select Buck2 Build Target';
     context.subscriptions.push(targetStatusBarItem);
-    context.subscriptions.push(vscode.commands.registerCommand(clickedTargetCommandId, onClickedTarget));
+    context.subscriptions.push(vscode.commands.registerCommand(clickedTargetCommandId, async () => onClickedTarget(context)));
 
     stopBuildButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
     stopBuildButton.command = stopBuildCommandId;
 
     context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateStatusBars));
     context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection(updateStatusBars));
+
+    buildOutput = vscode.window.createOutputChannel('Buck2');
+    currentTarget = context.workspaceState.get(currentTargetKey) ?? null;
 
     updateStatusBars();
     updateBuildButton();
@@ -116,7 +114,7 @@ async function onClickedPlatform() {
     });
 }
 
-async function onClickedTarget() {
+async function onClickedTarget(context: vscode.ExtensionContext) {
     const targets = await getTargets();
 
     targets.unshift('all');
@@ -127,6 +125,7 @@ async function onClickedTarget() {
         } else if (newTarget) {
             currentTarget = newTarget;
         }
+        context.workspaceState.update(currentTargetKey, currentTarget);
         await buildCompilationDatabase();
         updateStatusBars();
     });
@@ -334,24 +333,8 @@ async function build() {
 
 function run(command: string, args: string[]): Promise<number> {
     return new Promise((accept, reject) => {
-        if (!buildTerminal) {
-            writeEmitter = new vscode.EventEmitter<string>();
-            buildTerminal = vscode.window.createTerminal({
-                name: 'tim-buck2',
-                pty: {
-                    onDidWrite: writeEmitter.event,
-                    open() {
-
-                    },
-                    close() {
-
-                    },
-                    handleInput(data: string) {
-                    }
-                }
-            });
-            buildTerminal.show();
-        }
+        buildOutput.clear();
+        buildOutput.show();
 
         const options: SpawnOptions = {
             cwd: getWorkspaceRoot(),
@@ -360,21 +343,18 @@ function run(command: string, args: string[]): Promise<number> {
         buildProcess = spawn(command, args, options);
 
         const stdout = buildProcess.stdout!;
-        assert(stdout);
-
         const stderr = buildProcess.stderr!;
-        assert(stderr);
 
         stdout.setEncoding('utf8');
         stdout.addListener('data', (data) => {
             console.log('stdout', data);
-            writeEmitter.fire(data.replaceAll('\n', '\r\n'));
+            buildOutput.append(data.replaceAll('\n', '\r\n'));
         });
 
         stderr.setEncoding('utf8');
         stderr.addListener('data', (data: string) => {
             console.warn('stderr', data);
-            writeEmitter.fire(data.replaceAll('\n', '\r\n'));
+            buildOutput.append(data.replaceAll('\n', '\r\n'));
         });
 
         buildProcess.addListener('close', (code) => {
