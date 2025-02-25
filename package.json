@@ -1,9 +1,8 @@
 {
   "name": "tim-buck2",
-  "publisher": "implicit_cast",
   "displayName": "tim-buck2",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.80.0"
   },
