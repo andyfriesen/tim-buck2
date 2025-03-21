@@ -32,10 +32,6 @@
         "title": "buck2: Clean"
       },
       {
-        "command": "tim-buck2.compileThisFile",
-        "title": "buck2: Compile Current File"
-      },
-      {
         "command": "tim-buck2.launchTargetPath",
         "title": "buck2: Get Launch Target Path"
       }
@@ -52,6 +48,21 @@
           "type": "string",
           "default": "//platforms:",
           "description": "Target mask to use to look up available platforms"
+        },
+        "tim-buck2.compileCommandsGenerator": {
+          "type": "string",
+          "default": null,
+          "description": "BXL script used to generate a `compile_commands.json` (e.g. for `clangd`)"
+        },
+        "tim-buck2.compileCommandsDestination": {
+          "type": "string",
+          "default": null,
+          "description": "Destination file for a generated `compile_commands.json"
+        },
+        "tim-buck2.autoRestartClangd": {
+          "type": "boolean",
+          "default": false,
+          "description": "Restart `clangd` whenever `compile_commands.json` is generated"
         }
       }
     }

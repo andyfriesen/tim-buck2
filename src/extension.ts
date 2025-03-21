@@ -25,17 +25,6 @@ const launchTargetPathId = 'tim-buck2.launchTargetPath';
 
 let buildOutput : vscode.OutputChannel;
 
-type CompilationDatabase = {
-    [index: string]: CompilationDatabaseEntry
-};
-
-type CompilationDatabaseEntry = {
-    file: string,
-    directory: string,
-    arguments: string[],
-};
-
-let compilationDatabase: CompilationDatabase = {};
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -52,7 +41,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.commands.registerCommand(buildCommandId, build));
     context.subscriptions.push(vscode.commands.registerCommand(cleanCommandId, clean));
     context.subscriptions.push(vscode.commands.registerCommand(stopBuildCommandId, stopBuild));
-    context.subscriptions.push(vscode.commands.registerCommand(compileThisFileCommandId, compileThisFile));
 
     context.subscriptions.push(vscode.commands.registerCommand(
         launchTargetPathId,
@@ -93,8 +81,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     updateStatusBars();
     updateBuildButton();
-
-    buildCompilationDatabase();
 }
 
 // This method is called when your extension is deactivated
@@ -114,7 +100,7 @@ async function onClickedPlatform() {
         } else if (newPlatform) {
             currentPlatform = newPlatform;
         }
-        await buildCompilationDatabase();
+        await buildCompileCommands();
         updateStatusBars();
     });
 }
@@ -131,7 +117,7 @@ async function onClickedTarget(context: vscode.ExtensionContext) {
             currentTarget = newTarget;
         }
         context.workspaceState.update(currentTargetKey, currentTarget);
-        await buildCompilationDatabase();
+        await buildCompileCommands();
         updateStatusBars();
     });
 }
@@ -154,40 +140,28 @@ function updateStatusBars() {
     targetStatusBarItem.show();
 }
 
-async function buildCompilationDatabase() {
-    // buck2 build ':Luau.UnitTest[compilation-database]' ':Luau.Repl.CLI[compilation-database]'
-    //      --target-platforms //platforms:release-nosan --show-full-output
-
-    const json: string[] = JSON.parse(await runBuck(['cquery', 'deps(:)', '--json']));
-    const allTargets = json.map(s => s.split(' ', 1)[0]).filter(s => s.startsWith('root//'));
-
-    const compileDatabaseTargets = allTargets.map(s => s + '[compilation-database]');
-
-    const cmd = ['build', '--show-full-output'];
-
-    if (currentPlatform) {
-        cmd.push('--target-platforms');
-        cmd.push(currentPlatform);
-    }
-
-    const buildOutput = await runBuck(cmd.concat(compileDatabaseTargets));
-
-    const databasePaths = splitLines(buildOutput).map(s => s.split(' ', 2)[1]);
-
-    const newDatabase: CompilationDatabase = {};
-
-    const promises = databasePaths.map(path => addCompilationDatabase(newDatabase, path));
-    await Promise.all(promises);
-
-    compilationDatabase = newDatabase;
-}
-
-async function addCompilationDatabase(database: CompilationDatabase, filePath: string) {
-    const file = (await fs.readFile(filePath)).toString('utf8');
-    const json = JSON.parse(file);
-
-    for (const entry of json) {
-        database[path.normalize(entry.file)] = entry;
+async function buildCompileCommands() {
+    // NOTE: This function needs better error handling through-and-through.
+    if (currentTarget === null) { return; }
+    const conf = vscode.workspace.getConfiguration("tim-buck2");
+    const bxl = conf.get("compileCommandsGenerator");
+    const dest = conf.get("compileCommandsDestination");
+    // My kingdom for do notation ...
+    if (typeof bxl !== 'string' || typeof dest !== 'string') { return; } 
+    // The current assumption is that the compile commands BXL is off the form:
+    //
+    //  buck2 bxl $SCRIPT -- --targets $TARGET
+    //
+    // And prints out at least one `buck-out` path that is the presumed compile commands
+    const output = await runBuck(['bxl', bxl, "--", "--targets", currentTarget]);
+    const buckOut = output.split("\n").find((v) => v.startsWith("buck-out"));
+    if (buckOut === undefined) { return; }
+    const root = getWorkspaceRoot()!;
+    await fs.mkdir(path.join(root, path.dirname(dest)), { recursive: true });
+    await fs.copyFile(path.join(root, buckOut), path.join(root, dest));
+    if (conf.get("autoRestartClangd"))
+    {
+        vscode.commands.executeCommand("clangd.restart");
     }
 }
 
@@ -203,53 +177,6 @@ function stopBuild() {
 
 function clean() {
     runBuck(['clean']);
-}
-
-async function compileThisFile() {
-    const fsPath = vscode.window.activeTextEditor?.document.uri.fsPath;
-    if (!fsPath) {
-        return;
-    }
-
-    const workspaceRoot = getWorkspaceRoot();
-    if (!workspaceRoot) {
-        return;
-    }
-
-    /*
-     * Next thing: buck2 build compilation databases for the requested target only.
-     * We're going to have to compute the target that corresponds to the current
-     * file, then find that compilation database, then look that up.
-     */
-
-    const relativePath = path.relative(workspaceRoot, fsPath);
-
-    const entry = compilationDatabase[relativePath];
-
-    if (!entry) {
-        return;
-    }
-
-    const executable = entry.arguments[0];
-    const params = entry.arguments.slice(1);
-
-    const opts = {
-        cwd: path.join(getWorkspaceRoot()!!, entry.directory)
-    };
-
-    buildIsRunning = true;
-    buildProcess = execFile(executable, params, opts, (err, stdout, stderr) => {
-        vscode.window.showInformationMessage('Compile complete');
-        if (err) {
-            console.error('Error:', err);
-        } else {
-            console.log('Success!', stdout);
-        }
-        buildIsRunning = false;
-        buildProcess = undefined;
-        updateBuildButton();
-    });
-    updateBuildButton();
 }
 
 function splitLines(s: string): string[] {
@@ -323,7 +250,6 @@ async function build() {
     cmd.push(currentTarget ?? '...');
 
     buildIsRunning = true;
-    buildCompilationDatabase();
     updateBuildButton();
 
     const code = await run(buck2Path, cmd);
